@@ -1,5 +1,6 @@
 package com.sculkhordetriggers;
 
+import com.sculkhordetriggers.config.ModConfig;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.Mod;
 import org.apache.logging.log4j.LogManager;
@@ -11,8 +12,8 @@ public class SculkHordeTriggers {
     private static final Logger LOGGER = LogManager.getLogger();
 
     public SculkHordeTriggers() {
-        // Register the ModEvents class to handle all events
+        ModConfig.get();
         MinecraftForge.EVENT_BUS.register(new ModEvents());
+        LOGGER.info("Sculk Horde Triggers mod initialized");
     }
-
 }

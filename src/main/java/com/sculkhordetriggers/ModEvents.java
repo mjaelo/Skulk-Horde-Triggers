@@ -1,8 +1,10 @@
 package com.sculkhordetriggers;
 
-import com.sculkhordetriggers.data.ItemGroup;
-import com.sculkhordetriggers.discovery.DiscoveryManager;
+import com.sculkhordetriggers.config.ModConfig;
 import net.minecraft.advancements.Advancement;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -15,12 +17,15 @@ import net.minecraftforge.event.entity.living.MobEffectEvent;
 import net.minecraftforge.event.entity.player.AdvancementEvent;
 import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.List;
+import java.util.Objects;
 
 @Mod.EventBusSubscriber(modid = SculkHordeTriggers.MODID, value = Dist.CLIENT)
 public class ModEvents {
@@ -29,9 +34,13 @@ public class ModEvents {
 
     @SubscribeEvent
     public static void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getEntity().level().isClientSide()) {
+            return; // Only run on the server side
+        }
         String toDimension = event.getTo().location().getPath();
-        LOGGER.info("Changed dimension to {}", toDimension);
-        checkTrigger(ItemGroup.TriggerType.DIMENSION, toDimension);
+        if (shouldTrigger(ModConfig.TriggerType.DIMENSION, toDimension, event.getEntity())) {
+            executeTriggerCommand(event.getEntity(), ModConfig.TriggerType.DIMENSION);
+        }
     }
 
     @SubscribeEvent
@@ -40,9 +49,10 @@ public class ModEvents {
             return; // Only run on the server side
         }
         ItemStack itemStack = event.getItem().getItem();
-        String itemId = itemStack.getItem().getDescriptionId().split("\\.")[2];
-        LOGGER.info("Item picked up: {}", itemId);
-        checkTrigger(ItemGroup.TriggerType.ITEM, itemId);
+        String itemId = Objects.requireNonNull(ForgeRegistries.ITEMS.getKey(itemStack.getItem())).toString();
+        if (shouldTrigger(ModConfig.TriggerType.ITEM, itemId, event.getEntity())) {
+            executeTriggerCommand(event.getEntity(), ModConfig.TriggerType.ITEM);
+        }
     }
 
     @SubscribeEvent
@@ -52,9 +62,10 @@ public class ModEvents {
                 return; // Only run on the server side
             }
             LivingEntity killedEntity = event.getEntity();
-            String mobId = EntityType.getKey(killedEntity.getType()).toString().split(":")[1];
-            LOGGER.info("Mob killed: {}", mobId);
-            checkTrigger(ItemGroup.TriggerType.MOB, mobId);
+            String mobId = EntityType.getKey(killedEntity.getType()).toString();
+            if (shouldTrigger(ModConfig.TriggerType.MOB, mobId, player)) {
+                executeTriggerCommand(player,ModConfig.TriggerType.MOB);
+            }
         }
     }
 
@@ -66,8 +77,9 @@ public class ModEvents {
         Advancement advancement = event.getAdvancement();
         if (advancement == null) return;
         String advancementId = advancement.getId().toString();
-        LOGGER.info("Advancement earned: {}", advancementId);
-        checkTrigger(ItemGroup.TriggerType.ADVANCEMENT, advancementId);
+        if (shouldTrigger(ModConfig.TriggerType.ADVANCEMENT, advancementId, event.getEntity())) {
+            executeTriggerCommand(event.getEntity(),ModConfig.TriggerType.ADVANCEMENT);
+        }
     }
 
     @SubscribeEvent
@@ -77,9 +89,10 @@ public class ModEvents {
                 return; // Only run on the server side
             }
             MobEffectInstance effect = event.getEffectInstance();
-            String effectId = effect.getEffect().getDescriptionId().split("\\.")[2];
-            LOGGER.info("Effect applied: {}", effectId);
-            checkTrigger(ItemGroup.TriggerType.EFFECT, effectId);
+            String effectId = Objects.requireNonNull(ForgeRegistries.MOB_EFFECTS.getKey(effect.getEffect())).toString();
+            if (shouldTrigger(ModConfig.TriggerType.EFFECT, effectId, player)) {
+                executeTriggerCommand(player,ModConfig.TriggerType.EFFECT);
+            }
         }
     }
 
@@ -88,27 +101,91 @@ public class ModEvents {
         if (event.phase == TickEvent.Phase.END) {
             Player player = event.player;
             if (player.level().isClientSide()) {
-                return; // Only run on the server side
+                return; // Only run on server side
             }
             String currentBiome = player.level().getBiome(player.blockPosition()).unwrapKey().get().location().getPath();
             if (!currentBiome.equals(lastKnownBiome)) {
-                System.out.println(player.getName().getString() + " has entered the " + currentBiome + " biome.");
-                checkTrigger(ItemGroup.TriggerType.BIOME, currentBiome);
+                ModConfig.get().getTriggers(ModConfig.TriggerType.BIOME).stream()
+                        .filter(trigger -> trigger.keywords().stream()
+                                .filter(Objects::nonNull)
+                                .filter(keyword -> !keyword.trim().isEmpty())
+                                .anyMatch(keyword -> currentBiome.toLowerCase().contains(keyword.toLowerCase())))
+                        .findFirst()
+                        .ifPresent(trigger -> executeTriggerCommand(player,ModConfig.TriggerType.BIOME));
                 lastKnownBiome = currentBiome;
             }
         }
     }
 
-    private static void checkTrigger(ItemGroup.TriggerType triggerType, String triggerValue) {
-        // Get matching groups based on trigger
-        DiscoveryManager manager = DiscoveryManager.getInstance();
-        List<ItemGroup> matchingGtoups = manager.getItemGroupsByTrigger(triggerType, triggerValue);
-
-        // Trigger discovery if any groups match the condition
-        if (!matchingGtoups.isEmpty()) {
-            for (ItemGroup group : matchingGtoups) {
-//                manager.discoverItemGroup(group.groupName());
+    @SubscribeEvent
+    public static void onPlayerInteract(PlayerInteractEvent.RightClickItem event) {
+        if (event.getEntity().level().isClientSide()) {
+            return; // Only run on server side
+        }
+        Player player = event.getEntity();
+        ItemStack itemStack = event.getItemStack();
+        if (!itemStack.isEmpty()) {
+            String itemId = Objects.requireNonNull(ForgeRegistries.ITEMS.getKey(itemStack.getItem())).toString();
+            if (shouldTrigger(ModConfig.TriggerType.ITEM, itemId, player)) {
+                executeTriggerCommand(player,ModConfig.TriggerType.ITEM);
             }
+        }
+    }
+
+    private static boolean shouldTrigger(ModConfig.TriggerType triggerType, String triggerValue, Player player) {
+        if (triggerValue == null || triggerValue.trim().isEmpty() || player == null) {
+            return false;
+        }
+
+        String checkValue = triggerValue.toLowerCase();
+        // Check if any trigger in the config matches the current event
+        return ModConfig.get().getTriggers(triggerType).stream()
+                .filter(trigger -> {
+                    // Check if any keyword matches
+                    return trigger.keywords().stream()
+                            .filter(Objects::nonNull)
+                            .filter(keyword -> !keyword.trim().isEmpty())
+                            .anyMatch(keyword -> checkValue.contains(keyword.toLowerCase()));
+                })
+                .anyMatch(trigger -> player.getRandom().nextFloat() <= trigger.probability());
+    }
+
+    private static void executeTriggerCommand(Player player, ModConfig.TriggerType source) {
+        if (player == null || player.level().isClientSide) {
+            return; // Only run on server side
+        }
+
+        String command = ModConfig.get().getCommand()
+                .replace("@p", player.getName().getString());
+        executeConsoleCommand(command,source.name());
+    }
+
+    private static void executeConsoleCommand(String command,String sourceStr) {
+        if (command == null || command.trim().isEmpty()) {
+            return;
+        }
+
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) {
+            LOGGER.warn("Cannot execute command - server is not available");
+            return;
+        }
+
+        try {
+            CommandSourceStack source = server.createCommandSourceStack()
+                    .withPermission(4) // OP level 4 (highest)
+                    .withSuppressedOutput();
+
+            LOGGER.info("Executing command: {}", command);
+            server.getCommands().performPrefixedCommand(source, command);
+            
+            // Send confirmation message to all players
+            server.getPlayerList().broadcastSystemMessage(
+                Component.literal("§a[Trigger] §r Something felt the changes from §7" + sourceStr +"\n"+command),
+                false
+            );
+        } catch (Exception e) {
+            LOGGER.error("Failed to execute command: " + command, e);
         }
     }
 
