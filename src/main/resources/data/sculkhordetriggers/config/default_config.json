@@ -3,13 +3,18 @@
     "triggers": [
       {
         "type": "ITEM",
-        "probability": 1.0,
-        "keywords": ["echo_shard", "recovery_compass", "disc_fragment_5"]
+        "probability": 0.01,
+        "keywords": ["echo_shard"]
       },
       {
         "type": "BIOME",
         "probability": 1.0,
         "keywords": ["deep_dark", "ancient_city"]
+      },
+      {
+        "type": "MOB",
+        "probability": 0.5,
+        "keywords": ["warden"]
       }
     ],
     "effects": [
@@ -20,15 +25,21 @@
       {
         "type": "effect",
         "value": "sculkhorde:sculk_infected"
+      },
+      {
+        "type": "message",
+
+        "value": "You feel something stir in their slumber."
       }
-    ]
+    ],
+    "failMessage": "You feel a dark presence slumbering deep in the sculk."
   },
   "disable_auto_sculk_horde": {
     "triggers": [
       {
         "type": "ADVANCEMENT",
         "probability": 1.0,
-        "keywords": ["story/enter_the_end"]
+        "keywords": ["sculkhorde:sculk_horde_start"]
       }
     ],
     "effects": [
@@ -36,6 +47,7 @@
         "type": "command",
         "value": "/sculkhorde config trigger_automatically trigger_ancient_node_automatically false"
       }
-    ]
+    ],
+    "failMessage": ""
   }
 }

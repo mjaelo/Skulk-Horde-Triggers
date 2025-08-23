@@ -4,5 +4,6 @@ import java.util.List;
 
 public record ActionData(
         List<TriggerData> triggers,
-        List<EffectData> effects
+        List<EffectData> effects,
+        String failMessage
 ) {}

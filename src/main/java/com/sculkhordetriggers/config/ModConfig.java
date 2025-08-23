@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 public class ModConfig {
@@ -77,9 +76,11 @@ public class ModConfig {
                 
                 // Parse effects
                 List<EffectData> effects = parseEffects(actionObj);
+
+                String failMessage = actionObj.get("failMessage").getAsString();
                 
                 // Add the action to our map
-                actions.put(actionId, new ActionData(triggers, effects));
+                actions.put(actionId, new ActionData(triggers, effects, failMessage));
             }
             
             LOGGER.info("Loaded {} actions from config", actions.size());

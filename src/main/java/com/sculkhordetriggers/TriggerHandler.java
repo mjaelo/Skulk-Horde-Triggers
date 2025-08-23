@@ -4,19 +4,19 @@ import com.sculkhordetriggers.config.ModConfig;
 import com.sculkhordetriggers.data.ActionData;
 import com.sculkhordetriggers.data.EffectData;
 import com.sculkhordetriggers.data.TriggerType;
+import com.sculkhordetriggers.persistence.ActionPersistence;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 
@@ -48,14 +48,23 @@ public class TriggerHandler {
     public void handleTrigger(TriggerType type, String value, ServerPlayer player, MinecraftServer server) {
         if (player == null || server == null) return;
 
+        ActionPersistence persistence = SculkHordeTriggers.getActionPersistence();
+        if (persistence == null) return;
         config.getAllActions().forEach((actionId, actionData) -> {
+            if (persistence.isActionCompleted(actionId)) return;
             actionData.triggers().stream()
                     .filter(trigger -> trigger.type() == type)
                     .filter(trigger -> trigger.keywords().stream()
                             .anyMatch(keyword -> value.toLowerCase().contains(keyword.toLowerCase())))
-                    .filter(trigger -> RANDOM.nextFloat() <= trigger.probability())
                     .findFirst()
-                    .ifPresent(trigger -> executeEffects(actionData, player, server));
+                    .ifPresent(trigger -> {
+                        if (RANDOM.nextFloat() <= trigger.probability()) {
+                            executeEffects(actionData, player, server);
+                            persistence.markActionCompleted(actionId);
+                        } else if (actionData.failMessage() != null && !actionData.failMessage().isEmpty()) {
+                            broadcastMessage(actionData.failMessage(), server);
+                        }
+                    });
         });
     }
 
@@ -64,6 +73,7 @@ public class TriggerHandler {
             try {
                 switch (effect.type()) {
                     case COMMAND -> executeCommand(effect.value(), player, server);
+                    case MESSAGE -> broadcastMessage(effect.value(), server);
                     case ITEM -> giveItem(effect.value(), player);
                     case EFFECT -> applyEffect(effect.value(), player);
                 }
@@ -76,20 +86,21 @@ public class TriggerHandler {
     private void executeCommand(String command, ServerPlayer player, MinecraftServer server) {
         try {
             CommandSourceStack source = server.createCommandSourceStack()
-                    .withPermission(4) // OP level 4 (highest)
+                    .withPermission(4)
                     .withSuppressedOutput();
 
             LOGGER.info("Executing command: {}", command);
             server.getCommands().performPrefixedCommand(source, command);
-
-            // Send confirmation message to all players
-            server.getPlayerList().broadcastSystemMessage(
-                    Component.literal("§a §r Something has been awoken. §7"),
-                    false
-            );
         } catch (Exception e) {
             LOGGER.error("Failed to execute command: " + command, e);
         }
+    }
+
+    private static void broadcastMessage(String message, MinecraftServer server) {
+        server.getPlayerList().broadcastSystemMessage(
+                Component.literal(message),
+                false
+        );
     }
 
     private void giveItem(String itemId, ServerPlayer player) {
