@@ -8,8 +8,8 @@
       },
       {
         "type": "BIOME",
-        "probability": 1.0,
-        "keywords": ["deep_dark", "ancient_city"]
+        "probability": 0.05,
+        "keywords": ["deep_dark"]
       },
       {
         "type": "MOB",
