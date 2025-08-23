@@ -1,50 +1,41 @@
 {
-  "command": "/sculkhorde config trigger_automatically trigger_ancient_node_automatically true",
-  "item_groups": [
-    {
-      "groupName": "ancient_city_loot",
-      "triggerConfig": {
+  "enable_auto_sculk_horde": {
+    "triggers": [
+      {
         "type": "ITEM",
         "probability": 1.0,
         "keywords": ["echo_shard", "recovery_compass", "disc_fragment_5"]
       },
-      "namespaces": ["minecraft"]
-    },
-    {
-      "groupName": "deep_dark_biome",
-      "triggerConfig": {
+      {
         "type": "BIOME",
         "probability": 1.0,
         "keywords": ["deep_dark", "ancient_city"]
+      }
+    ],
+    "effects": [
+      {
+        "type": "command",
+        "value": "/sculkhorde config trigger_automatically trigger_ancient_node_automatically true"
       },
-      "namespaces": ["minecraft"]
-    },
-    {
-      "groupName": "warden_encounter",
-      "triggerConfig": {
-        "type": "MOB",
-        "probability": 1.0,
-        "keywords": ["warden"]
-      },
-      "namespaces": ["minecraft"]
-    },
-    {
-      "groupName": "end_advancements",
-      "triggerConfig": {
+      {
+        "type": "effect",
+        "value": "sculkhorde:sculk_infected"
+      }
+    ]
+  },
+  "disable_auto_sculk_horde": {
+    "triggers": [
+      {
         "type": "ADVANCEMENT",
         "probability": 1.0,
-        "keywords": ["story/enter_the_end", "story/follow_ender_eye"]
-      },
-      "namespaces": ["minecraft"]
-    },
-    {
-      "groupName": "nether_advancements",
-      "triggerConfig": {
-        "type": "ADVANCEMENT",
-        "probability": 1.0,
-        "keywords": ["story/enter_the_nether", "story/obtain_ancient_debris"]
-      },
-      "namespaces": ["minecraft"]
-    }
-  ]
+        "keywords": ["story/enter_the_end"]
+      }
+    ],
+    "effects": [
+      {
+        "type": "command",
+        "value": "/sculkhorde config trigger_automatically trigger_ancient_node_automatically false"
+      }
+    ]
+  }
 }

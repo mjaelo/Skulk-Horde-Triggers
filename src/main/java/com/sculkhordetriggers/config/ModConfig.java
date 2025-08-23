@@ -1,38 +1,35 @@
 package com.sculkhordetriggers.config;
 
 import com.google.gson.*;
+import com.sculkhordetriggers.data.*;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.StandardOpenOption;
+import java.util.*;
 
 public class ModConfig {
-    public enum TriggerType {
-        BIOME, ITEM, MOB, EFFECT, ADVANCEMENT, DIMENSION
-    }
-
-    public record TriggerData(
-            TriggerType type,
-            float probability,
-            List<String> keywords
-    ) {
-    }
-
     private static final Logger LOGGER = LogManager.getLogger();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting()
+            .registerTypeAdapter(TriggerType.class, (JsonDeserializer<TriggerType>) (json, type, context) -> 
+                    TriggerType.valueOf(json.getAsString().toUpperCase()))
+            .registerTypeAdapter(EffectType.class, (JsonDeserializer<EffectType>) (json, type, context) -> 
+                    EffectType.valueOf(json.getAsString().toUpperCase()))
+            .create();
+    
     private static final Path CONFIG_PATH = FMLPaths.CONFIGDIR.get().resolve("sculkhorde-triggers.json");
-
+    private static final String DEFAULT_CONFIG_RESOURCE = "data/sculkhordetriggers/config/default_config.json";
+    
     private static ModConfig INSTANCE;
-    private String command;
-    private final List<TriggerData> triggers;
-
+    private final Map<String, ActionData> actions = new HashMap<>();
+    
     private ModConfig() {
-        this.command = "/sculkhorde config trigger_automatically trigger_ancient_node_automatically true @p";
-        this.triggers = new ArrayList<>();
         loadConfig();
     }
 
@@ -43,138 +40,95 @@ public class ModConfig {
         return INSTANCE;
     }
 
-    public String getCommand() {
-        return command;
-    }
-
-    public List<TriggerData> getTriggers(TriggerType type) {
-        return triggers.stream()
-                .filter(trigger -> trigger.type() == type)
-                .toList();
+    /**
+     * Get all actions
+     * @return An unmodifiable map of all actions
+     */
+    public Map<String, ActionData> getAllActions() {
+        return Collections.unmodifiableMap(actions);
     }
 
     private void loadConfig() {
         try {
+            if (!Files.exists(CONFIG_PATH)) {
+                Files.createDirectories(CONFIG_PATH.getParent());
+                try (InputStream is = getClass().getClassLoader().getResourceAsStream(DEFAULT_CONFIG_RESOURCE)) {
+                    if (is == null) {
+                        throw new IOException("Could not find default config in resources: " + DEFAULT_CONFIG_RESOURCE);
+                    }
+                    Files.copy(is, CONFIG_PATH);
+                }
+            }
+
+            // Read and parse the config file
             String json = Files.readString(CONFIG_PATH);
             JsonObject config = JsonParser.parseString(json).getAsJsonObject();
-
-            // Load command
-            if (config.has("command")) {
-                this.command = config.get("command").getAsString();
+            
+            // Clear existing actions
+            actions.clear();
+            
+            // Load each action
+            for (Map.Entry<String, JsonElement> entry : config.entrySet()) {
+                String actionId = entry.getKey();
+                JsonObject actionObj = entry.getValue().getAsJsonObject();
+                
+                // Parse triggers
+                List<TriggerData> triggers = parseTriggers(actionObj);
+                
+                // Parse effects
+                List<EffectData> effects = parseEffects(actionObj);
+                
+                // Add the action to our map
+                actions.put(actionId, new ActionData(triggers, effects));
             }
-
-            // Load triggers
-            triggers.clear();
-            if (config.has("triggers")) {
-                for (JsonElement element : config.getAsJsonArray("triggers")) {
-                    try {
-                        JsonObject triggerObj = element.getAsJsonObject();
-                        TriggerType type = TriggerType.valueOf(triggerObj.get("type").getAsString());
-                        float probability = triggerObj.has("probability") ?
-                                triggerObj.get("probability").getAsFloat() : 1.0f;
-                        List<String> keywords = new ArrayList<>();
-
-                        if (triggerObj.has("keywords")) {
-                            triggerObj.getAsJsonArray("keywords")
-                                    .forEach(k -> keywords.add(k.getAsString()));
-                        }
-
-                        triggers.add(new TriggerData(type, probability, keywords));
-                    } catch (Exception e) {
-                        LOGGER.error("Failed to parse trigger: {}", element, e);
-                    }
-                }
-            }
-
-            LOGGER.info("Loaded {} triggers from config", triggers.size());
+            
+            LOGGER.info("Loaded {} actions from config", actions.size());
+            
         } catch (Exception e) {
-            LOGGER.error("Failed to load config, loading defaults", e);
-            loadDefaultConfig();
-            saveConfig(); // Save the loaded defaults
+            LOGGER.error("Failed to load config", e);
         }
     }
-
-    private void saveConfig() {
-        try {
-            JsonObject config = new JsonObject();
-            config.addProperty("command", command);
-
-            JsonArray triggersArray = new JsonArray();
-            for (TriggerData trigger : triggers) {
-                JsonObject triggerObj = new JsonObject();
-                triggerObj.addProperty("type", trigger.type().name());
-                triggerObj.addProperty("probability", trigger.probability());
-
-                JsonArray keywordsArray = new JsonArray();
-                for (String keyword : trigger.keywords()) {
-                    keywordsArray.add(keyword);
+    
+    private List<TriggerData> parseTriggers(JsonObject actionObj) {
+        List<TriggerData> triggers = new ArrayList<>();
+        JsonArray triggersArray = actionObj.getAsJsonArray("triggers");
+        
+        for (JsonElement triggerElement : triggersArray) {
+            try {
+                JsonObject triggerObj = triggerElement.getAsJsonObject();
+                TriggerType type = TriggerType.valueOf(triggerObj.get("type").getAsString().toUpperCase());
+                float probability = triggerObj.get("probability").getAsFloat();
+                List<String> keywords = new ArrayList<>();
+                
+                JsonArray keywordsArray = triggerObj.getAsJsonArray("keywords");
+                for (JsonElement keyword : keywordsArray) {
+                    keywords.add(keyword.getAsString().toLowerCase());
                 }
-                triggerObj.add("keywords", keywordsArray);
-
-                triggersArray.add(triggerObj);
+                
+                triggers.add(new TriggerData(type, probability, keywords));
+            } catch (Exception e) {
+                LOGGER.error("Failed to parse trigger: {}", triggerElement, e);
             }
-            config.add("triggers", triggersArray);
-
-            // Create parent directories if they don't exist
-            Files.createDirectories(CONFIG_PATH.getParent());
-
-            // Write to file
-            Files.writeString(CONFIG_PATH, GSON.toJson(config));
-        } catch (Exception e) {
-            LOGGER.error("Failed to save config", e);
         }
+        
+        return triggers;
     }
-
-    private void loadDefaultConfig() {
-        try {
-            // Load default config from resources
-            String defaultConfig = new String(getClass().getClassLoader()
-                    .getResourceAsStream("data/sculkhordetriggers/config/default_config.json")
-                    .readAllBytes());
-
-            JsonObject config = JsonParser.parseString(defaultConfig).getAsJsonObject();
-
-            // Load command
-            if (config.has("command")) {
-                this.command = config.get("command").getAsString();
+    
+    private List<EffectData> parseEffects(JsonObject actionObj) {
+        List<EffectData> effects = new ArrayList<>();
+        JsonArray effectsArray = actionObj.getAsJsonArray("effects");
+        
+        for (JsonElement effectElement : effectsArray) {
+            try {
+                JsonObject effectObj = effectElement.getAsJsonObject();
+                EffectType type = EffectType.valueOf(effectObj.get("type").getAsString().toUpperCase());
+                String value = effectObj.get("value").getAsString();
+                effects.add(new EffectData(type, value));
+            } catch (Exception e) {
+                LOGGER.error("Failed to parse effect: {}", effectElement, e);
             }
-
-            // Load triggers
-            triggers.clear();
-            if (config.has("item_groups")) {
-                for (JsonElement element : config.getAsJsonArray("item_groups")) {
-                    try {
-                        JsonObject groupObj = element.getAsJsonObject();
-                        JsonObject triggerObj = groupObj.getAsJsonObject("triggerConfig");
-
-                        TriggerType type = TriggerType.valueOf(triggerObj.get("type").getAsString());
-                        float probability = triggerObj.has("probability") ?
-                                triggerObj.get("probability").getAsFloat() : 1.0f;
-                        List<String> keywords = new ArrayList<>();
-
-                        if (triggerObj.has("keywords")) {
-                            triggerObj.getAsJsonArray("keywords")
-                                    .forEach(k -> keywords.add(k.getAsString()));
-                        }
-
-                        triggers.add(new TriggerData(type, probability, keywords));
-                    } catch (Exception e) {
-                        LOGGER.error("Failed to parse default trigger group: {}", element, e);
-                    }
-                }
-            }
-
-            LOGGER.info("Loaded default configuration with {} triggers", triggers.size());
-        } catch (Exception e) {
-            LOGGER.error("Failed to load default config, using fallback", e);
-            // Fallback to hardcoded defaults if loading from file fails
-            triggers.clear();
-            triggers.add(new TriggerData(TriggerType.BIOME, 1.0f,
-                    List.of("deep_dark", "ancient_city")));
-            triggers.add(new TriggerData(TriggerType.ITEM, 1.0f,
-                    List.of("echo_shard", "recovery_compass")));
-            triggers.add(new TriggerData(TriggerType.MOB, 1.0f,
-                    List.of("warden")));
         }
+        
+        return effects;
     }
 }
