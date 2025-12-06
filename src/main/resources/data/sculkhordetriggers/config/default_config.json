@@ -4,7 +4,7 @@
       {
         "type": "ITEM",
         "probability": 0.01,
-        "keywords": ["echo_shard"]
+        "keywords": ["echo_","sculk","warden"]
       },
       {
         "type": "BIOME",
@@ -14,7 +14,7 @@
       {
         "type": "MOB",
         "probability": 0.5,
-        "keywords": ["warden"]
+        "keywords": ["warden","sculk"]
       }
     ],
     "effects": [
@@ -29,7 +29,7 @@
       {
         "type": "message",
 
-        "value": "You feel something stir in their slumber."
+        "value": "You feel something stir in its slumber."
       }
     ],
     "failMessage": "You feel a dark presence slumbering deep in the sculk."

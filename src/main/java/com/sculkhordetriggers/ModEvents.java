@@ -7,6 +7,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.AdvancementEvent;
+import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -66,21 +67,33 @@ public class ModEvents {
     }
 
     @SubscribeEvent
-    public static void onPlayerInteract(PlayerInteractEvent.RightClickItem event) {
-        if (event.getEntity().level().isClientSide() || !(event.getEntity() instanceof ServerPlayer player)) {
+    public static void onPlayerInteractRH(PlayerInteractEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
             return; // Only run on server side with ServerPlayer
         }
-
         ItemStack itemStack = event.getItemStack();
+        handleItemStack(player, itemStack);
+    }
+
+    @SubscribeEvent
+    public static void onItemPickup(EntityItemPickupEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            ItemStack itemStack = event.getItem().getItem();
+            handleItemStack(player, itemStack);
+        }
+    }
+
+    private static void handleItemStack(ServerPlayer player, ItemStack itemStack) {
         if (!itemStack.isEmpty()) {
             String itemName = ForgeRegistries.ITEMS.getKey(itemStack.getItem()).toString();
             TRIGGER_HANDLER.handleTrigger(
                 TriggerType.ITEM,
                 itemName,
-                player,
+                    player,
                 serverInstance
             );
         }
     }
+
 
 }
