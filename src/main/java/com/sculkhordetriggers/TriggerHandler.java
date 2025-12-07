@@ -117,7 +117,7 @@ public class TriggerHandler {
         ResourceLocation effectId = new ResourceLocation(effectString);
         MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(effectId);
         if (effect == null) return;
-        int duration = 200; // Default 10 seconds
+        int duration = 2400; // Default 120 seconds
         int amplifier = 0;
         player.addEffect(new MobEffectInstance(effect, duration, amplifier));
     }
